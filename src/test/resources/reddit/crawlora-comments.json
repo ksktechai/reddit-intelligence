@@ -1,0 +1,39 @@
+{
+  "code": 200,
+  "msg": "OK",
+  "data": {
+    "comments": [
+      {
+        "id": "comment2",
+        "parent_id": "t1_comment1",
+        "author": { "name": "helpful_student" },
+        "body": "Nested answer",
+        "score": 4,
+        "created_utc": 1710000300
+      },
+      {
+        "id": "comment1",
+        "parent_id": "t3_post1",
+        "author": { "name": "current_student" },
+        "body": "Root answer",
+        "score": 8,
+        "created": "2024-03-09T16:03:20Z"
+      },
+      {
+        "id": "orphan",
+        "parent_id": "t1_not_returned",
+        "author": "another_student",
+        "body": "Parent was outside the response limit."
+      },
+      {
+        "id": "deleted",
+        "parent_id": "comment1",
+        "author": null,
+        "body": "[deleted]"
+      },
+      {
+        "body": "Missing id is ignored"
+      }
+    ]
+  }
+}

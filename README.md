@@ -1,28 +1,29 @@
 # reddit-intelligence
 
-`reddit-intelligence` is a Java 25 / Quarkus backend that creates research datasets from Reddit's public JSON endpoints. A dataset records one subreddit search request, stores matching posts, recursively stores the comments returned for each post, and exposes the collected raw data through REST APIs.
+`reddit-intelligence` is a Java 25 / Quarkus backend that creates research datasets from Reddit data returned by [Crawlora's Reddit APIs](https://crawlora.net/docs/reddit). A dataset records one subreddit search request, stores matching posts, rebuilds and stores the returned comment hierarchy, and exposes the collected raw data through REST APIs.
 
 This repository is Phase 1. It intentionally contains no LLMs, embeddings, vector storage, RAG, sentiment processing, authentication, or UI.
 
 ## Architecture
 
-The API performs imports synchronously: `POST /api/datasets` returns after the anonymous Reddit import has finished or failed. The components are deliberately small:
+The API performs imports synchronously: `POST /api/datasets` returns after the Crawlora-backed Reddit import has finished or failed. The components are deliberately small:
 
 - `api`: validated request records, response records, and REST resources.
 - `dataset`: dataset orchestration and import statistics.
-- `reddit`: replaceable `RedditClient`, anonymous JSON REST client, retry/pagination logic, Reddit transport records, recursive parser, and importer.
+- `reddit`: replaceable `RedditClient`, Crawlora REST client, retry/cursor pagination logic, normalized transport records, flat-comment hierarchy reconstruction, and importer.
 - `persistence`: Panache entities and transaction-scoped persistence operations.
 - `post` and `comment`: read services that map entities to API records.
-- `config`: typed Reddit configuration.
+- `config`: typed Crawlora configuration.
 - Flyway owns the production schema; Hibernate only validates it.
 
-`RedditClient` is the boundary for a future OAuth/API implementation. Reddit JSON objects are parsed into transport records and never used as persistence entities. Persistence entities are never returned directly from the REST API.
+`RedditClient` keeps the collection provider separate from dataset orchestration. Crawlora JSON objects are parsed into transport records and never used as persistence entities. Persistence entities are never returned directly from the REST API.
 
 ## Requirements
 
 - JDK 25
 - Docker Desktop, Docker Engine, or a compatible container runtime
 - Docker Compose v2
+- A Crawlora API key
 
 The Gradle wrapper is included; a system Gradle installation is not required. The project uses Quarkus 3.38.1, PostgreSQL 16, Hibernate ORM with Panache, Flyway, Quarkus REST, Quarkus REST Client/Jackson, Bean Validation, JUnit, Mockito, and Quarkus PostgreSQL Dev Services backed by Testcontainers.
 
@@ -45,11 +46,14 @@ The Compose service includes a PostgreSQL health check and a named volume. Stop 
 
 ## Run the application
 
-Confirm that `java -version` reports Java 25, then run:
+Confirm that `java -version` reports Java 25, set a server-side Crawlora key, then run:
 
 ```bash
+export CRAWLORA_API_KEY="replace-with-your-rotated-key"
 ./gradlew quarkusDev
 ```
+
+If a key has appeared in a pasted request, terminal capture, or source file, rotate it in the Crawlora console before using it here. The application can start without a key, but dataset creation fails with a clear configuration error until `CRAWLORA_API_KEY` is set.
 
 The API listens on `http://localhost:8080`. Swagger UI is available in development mode at `http://localhost:8080/q/swagger-ui`.
 
@@ -62,18 +66,26 @@ java -jar build/quarkus-app/quarkus-run.jar
 
 Database settings can be overridden with `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`.
 
-Reddit settings in `application.properties` can be overridden with:
+Crawlora settings in `application.properties` can be overridden with:
 
 | Environment variable | Default |
 | --- | --- |
-| `REDDIT_BASE_URL` | `https://www.reddit.com` |
-| `REDDIT_USER_AGENT` | `reddit-intelligence/1.0 (contact: local-research)` |
-| `REDDIT_CONNECT_TIMEOUT` | `5000` ms |
-| `REDDIT_READ_TIMEOUT` | `30000` ms |
-| `REDDIT_MAX_RETRIES` | `3` |
-| `REDDIT_RETRY_DELAY` | `1000` ms |
+| `CRAWLORA_API_KEY` | none; required for imports |
+| `CRAWLORA_BASE_URL` | `https://api.crawlora.net` |
+| `CRAWLORA_CONNECT_TIMEOUT` | `5000` ms |
+| `CRAWLORA_READ_TIMEOUT` | `30000` ms |
+| `CRAWLORA_MAX_RETRIES` | `3` |
+| `CRAWLORA_RETRY_DELAY` | `1000` ms base exponential delay |
+| `CRAWLORA_RATE_LIMIT_RETRY_DELAY` | `60000` ms when a 429 has no `Retry-After` |
+| `CRAWLORA_COMMENTS_LIMIT` | `100` (valid range `1`–`100`) |
 
-For sustained use, set `REDDIT_USER_AGENT` to a descriptive value with a real contact or project reference.
+HTTP 429 and 5xx responses, plus transport failures, are retried with bounded exponential backoff. A numeric `Retry-After` header takes precedence. Authentication and other non-retryable 4xx responses fail immediately.
+
+## Run from IntelliJ IDEA
+
+The repository includes a shared `Quarkus Dev` Gradle run configuration. Open the repository root as the IntelliJ project, edit that run configuration once, and add `CRAWLORA_API_KEY` under environment variables. Keep the value local; do not save the secret into the shared XML file.
+
+Start PostgreSQL first, then select **Quarkus Dev** from the run configuration menu. A non-secret environment template is available in `.env.example` for reference.
 
 ## First University of Auckland import
 
@@ -127,13 +139,13 @@ curl http://localhost:8080/api/comments/1
 
 ## Run tests
 
-Docker must be running. Normal tests never call live Reddit:
+Docker must be running. Normal tests mock the provider boundary and never call live Crawlora or spend credits:
 
 ```bash
 ./gradlew test
 ```
 
-Quarkus Dev Services starts a disposable PostgreSQL 16 Testcontainer, Flyway migrates it, and the integration test exercises dataset creation, post persistence, nested comment persistence, hierarchy, and a repeated import without raw-data duplicates. JSON parser tests use fixtures in `src/test/resources/reddit/` and cover missing fields, deleted comments, nested replies, unsupported kinds, and `more` objects.
+Quarkus Dev Services starts a disposable PostgreSQL 16 Testcontainer, Flyway migrates it, and the integration test exercises dataset creation, post persistence, nested comment persistence, hierarchy, and a repeated import without raw-data duplicates. Crawlora client and parser tests use fixtures in `src/test/resources/reddit/` and cover normalized fields, missing fields, flat parent links, deleted comments, cursor pagination, incomplete comment pages, retryable failures, and non-retryable authentication errors.
 
 Run the complete verification and package the service with:
 
@@ -150,13 +162,15 @@ Run the complete verification and package the service with:
 
 Re-importing the same search creates a new dataset, refreshes the matching raw post/comment metadata, and links the new dataset to existing posts. Unique constraints provide the final database-level duplicate guarantee.
 
-`comments_downloaded=true` means the comments endpoint returned and its represented comments were stored. `comments_complete=true` means the response contained no `more` placeholders and the parsed count was at least Reddit's reported comment count. It means “appears complete,” not a guarantee that Reddit exposed every historical comment.
+`comments_downloaded=true` means the Crawlora comments endpoint returned and its represented comments were stored. `comments_complete=true` means fewer comments than the configured provider limit were returned and the parsed count was at least the post's reported comment count. It means “appears complete,” not a guarantee that Reddit exposed every historical comment. A response containing exactly the configured limit is marked incomplete because Crawlora's comments endpoint has no continuation cursor.
 
-## Anonymous Reddit JSON limitations
+## Crawlora collection characteristics
 
-Phase 1 uses Reddit's unauthenticated JSON endpoints, not HTML scraping. These endpoints can be rate-limited, return HTTP 403/429, change behavior, cap search results, omit removed/private/moderated content, and represent undisclosed comments with `more` placeholders. Search is limited by Reddit's own indexing and pagination behavior. Deleted authors can be null or `[deleted]`; deleted/removed bodies are retained as returned.
+The service calls `GET /api/v1/reddit/search` and `GET /api/v1/reddit/comments/{id}`. Search results are cursor-paginated in pages of at most 100 until `maxPosts` is reached, results end, a cursor repeats, or a page adds no new posts. Each successful search page and comment request consumes Crawlora credits according to the active plan.
 
-The client sends a proper User-Agent, follows search cursors, retries transport errors, HTTP 429, and server errors with bounded delays, and logs failures without logging full Reddit response bodies. A comment failure leaves `comments_downloaded=false` for a new post and allows other posts in the dataset to be retained. A search-level failure marks the dataset `FAILED` with an error message.
+Crawlora's default public comment response is flat and currently clamps `limit` to 100. The parser uses `parent_id` when present to rebuild nested records; a comment whose parent was not returned is retained as a root so collected data is not discarded. Missing scores and reported comment counts are stored as zero. Deleted/removed bodies are retained as returned.
+
+The client does not log the API key or full response bodies. A comment failure leaves `comments_downloaded=false` for a new post and allows other posts in the dataset to be retained. A search-level failure marks the dataset `FAILED` with an error message.
 
 ## Future roadmap
 

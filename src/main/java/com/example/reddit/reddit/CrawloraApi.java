@@ -8,27 +8,26 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
-@RegisterRestClient(configKey = "reddit-api")
-public interface RedditJsonApi {
+@Path("/api/v1/reddit")
+@RegisterRestClient(configKey = "crawlora-api")
+public interface CrawloraApi {
 
     @GET
-    @Path("/r/{subreddit}/search.json")
+    @Path("/search")
     Response search(
-            @PathParam("subreddit") String subreddit,
             @QueryParam("q") String query,
-            @QueryParam("restrict_sr") String restrictSubreddit,
+            @QueryParam("subreddit") String subreddit,
             @QueryParam("sort") String sort,
-            @QueryParam("t") String timeRange,
+            @QueryParam("time") String timeRange,
             @QueryParam("limit") int limit,
             @QueryParam("after") String after,
-            @QueryParam("raw_json") int rawJson,
-            @HeaderParam("User-Agent") String userAgent);
+            @HeaderParam("x-api-key") String apiKey);
 
     @GET
-    @Path("/comments/{postId}.json")
+    @Path("/comments/{postId}")
     Response comments(
             @PathParam("postId") String postId,
+            @QueryParam("sort") String sort,
             @QueryParam("limit") int limit,
-            @QueryParam("raw_json") int rawJson,
-            @HeaderParam("User-Agent") String userAgent);
+            @HeaderParam("x-api-key") String apiKey);
 }

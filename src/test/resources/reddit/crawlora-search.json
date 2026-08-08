@@ -1,0 +1,45 @@
+{
+  "code": 200,
+  "msg": "OK",
+  "data": {
+    "query": "Master of Artificial Intelligence",
+    "subreddit": "universityofauckland",
+    "sort": "relevance",
+    "time": "all",
+    "posts": [
+      {
+        "id": "post1",
+        "name": "t3_post1",
+        "subreddit": "universityofauckland",
+        "title": "Master of Artificial Intelligence experience",
+        "url": "https://www.reddit.com/r/universityofauckland/comments/post1/example/",
+        "permalink": "https://www.reddit.com/r/universityofauckland/comments/post1/example/",
+        "author": {
+          "name": "student_one",
+          "profile_url": "https://www.reddit.com/user/student_one/"
+        },
+        "created_utc": 1710000000,
+        "created": "2024-03-09T16:00:00Z",
+        "selftext": "A representative post body.",
+        "score": 42,
+        "comment_count": 3
+      },
+      {
+        "id": "post2",
+        "subreddit": "universityofauckland",
+        "title": "AI masters question",
+        "url": "https://www.reddit.com/r/universityofauckland/comments/post2/example/",
+        "author": null,
+        "created": "2024-03-09T16:01:40Z",
+        "selftext": null
+      },
+      {
+        "title": "Missing id is ignored"
+      }
+    ],
+    "pagination": {
+      "limit": 2,
+      "after": "t3_next"
+    }
+  }
+}
