@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: reddit-intelligence-postgres
+    environment:
+      POSTGRES_DB: reddit_intelligence
+      POSTGRES_USER: reddit
+      POSTGRES_PASSWORD: reddit
+    ports:
+      - "5432:5432"
+    volumes:
+      - reddit-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reddit -d reddit_intelligence"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  reddit-postgres-data:
