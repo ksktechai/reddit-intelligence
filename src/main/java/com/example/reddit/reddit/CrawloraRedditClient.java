@@ -9,6 +9,7 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -25,37 +26,62 @@ public class CrawloraRedditClient implements RedditClient {
     private final CrawloraApi api;
     private final CrawloraResponseParser parser;
     private final CrawloraConfig config;
+    private final CrawloraRequestPacer pacer;
 
     @Inject
     public CrawloraRedditClient(
             @RestClient CrawloraApi api,
             CrawloraResponseParser parser,
-            CrawloraConfig config) {
+            CrawloraConfig config,
+            CrawloraRequestPacer pacer) {
         this.api = api;
         this.parser = parser;
         this.config = config;
+        this.pacer = pacer;
     }
 
     @Override
     public List<RedditPostData> searchPosts(
-            String subreddit, String query, String sort, String timeRange, int maxPosts) {
+            String subreddit,
+            String query,
+            String sort,
+            String timeRange,
+            Instant createdAtOrAfter,
+            int maxPosts) {
         String apiKey = requiredApiKey();
         Map<String, RedditPostData> uniquePosts = new LinkedHashMap<>();
+        Set<String> seenPostIds = new HashSet<>();
         Set<String> seenCursors = new HashSet<>();
         String after = null;
 
         do {
             int limit = Math.min(SEARCH_PAGE_LIMIT, maxPosts - uniquePosts.size());
             String cursor = after;
-            JsonNode json = execute(
-                    () -> api.search(query, subreddit, sort, timeRange, limit, cursor, apiKey),
-                    "search subreddit=" + subreddit);
+            JsonNode json;
+            try {
+                json = execute(
+                        () -> api.search(query, subreddit, sort, timeRange, limit, cursor, apiKey),
+                        "search subreddit=" + subreddit);
+            } catch (CrawloraSearchExhaustedException exception) {
+                LOG.infof(
+                        "Stopping Crawlora search because the provider reported no RSS entries "
+                                + "subreddit=%s cursor=%s postsCollected=%d",
+                        subreddit,
+                        cursor,
+                        uniquePosts.size());
+                break;
+            }
             CrawloraSearchPage page = parser.parseSearch(json);
-            int previousSize = uniquePosts.size();
-            page.posts().forEach(post -> uniquePosts.putIfAbsent(post.redditId(), post));
+            int previousSeenCount = seenPostIds.size();
+            for (RedditPostData post : page.posts()) {
+                seenPostIds.add(post.redditId());
+                if (isOnOrAfter(post, createdAtOrAfter)) {
+                    uniquePosts.putIfAbsent(post.redditId(), post);
+                }
+            }
             after = page.after();
-            if (uniquePosts.size() == previousSize) {
-                LOG.warnf("Stopping Crawlora pagination after a page added no posts subreddit=%s",
+            if (seenPostIds.size() == previousSeenCount) {
+                LOG.warnf("Stopping Crawlora pagination after a page added no new posts subreddit=%s",
                         subreddit);
                 break;
             }
@@ -70,6 +96,11 @@ public class CrawloraRedditClient implements RedditClient {
         return result.size() <= maxPosts
                 ? List.copyOf(result)
                 : List.copyOf(result.subList(0, maxPosts));
+    }
+
+    private static boolean isOnOrAfter(RedditPostData post, Instant createdAtOrAfter) {
+        return createdAtOrAfter == null
+                || post.createdAt() != null && !post.createdAt().isBefore(createdAtOrAfter);
     }
 
     @Override
@@ -96,6 +127,7 @@ public class CrawloraRedditClient implements RedditClient {
     private JsonNode execute(ResponseCall call, String operation) {
         int maxRetries = Math.max(0, config.maxRetries());
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            pacer.awaitTurn(operation);
             try (Response response = call.invoke()) {
                 int status = response.getStatus();
                 if (status >= 200 && status < 300) {
@@ -104,6 +136,9 @@ public class CrawloraRedditClient implements RedditClient {
                 boolean retryable = status == 429 || status >= 500;
                 LOG.warnf("Crawlora HTTP failure operation=\"%s\" status=%d attempt=%d retryable=%s",
                         operation, status, attempt + 1, retryable);
+                if (status == 503 && isExhaustedSearchResponse(response)) {
+                    throw new CrawloraSearchExhaustedException();
+                }
                 if (!retryable || attempt == maxRetries) {
                     throw new RedditClientException(
                             "Crawlora request failed for " + operation + " with HTTP " + status);
@@ -122,6 +157,16 @@ public class CrawloraRedditClient implements RedditClient {
             }
         }
         throw new RedditClientException("Crawlora request failed for " + operation);
+    }
+
+    private static boolean isExhaustedSearchResponse(Response response) {
+        JsonNode body = response.readEntity(JsonNode.class);
+        if (body == null) {
+            return false;
+        }
+        String providerDetail = body.path("data").asText("");
+        return providerDetail.toLowerCase(java.util.Locale.ROOT)
+                .contains("reddit rss parser found no entries");
     }
 
     private long retryDelay(Response response, int status, int attempt) {
@@ -160,5 +205,8 @@ public class CrawloraRedditClient implements RedditClient {
     @FunctionalInterface
     private interface ResponseCall {
         Response invoke();
+    }
+
+    private static final class CrawloraSearchExhaustedException extends RuntimeException {
     }
 }

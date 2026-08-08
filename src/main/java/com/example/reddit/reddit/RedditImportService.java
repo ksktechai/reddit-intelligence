@@ -8,6 +8,7 @@ import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,10 +29,15 @@ public class RedditImportService {
     public ImportStatistics importDataset(long datasetId, CreateDatasetRequest request) {
         LOG.infof("Starting Reddit import datasetId=%d subreddit=%s query=\"%s\"",
                 datasetId, request.subreddit(), request.query());
+        Instant createdAtOrAfter = request.fromDate() == null
+                ? null
+                : request.fromDate().atStartOfDay(ZoneOffset.UTC).toInstant();
         List<RedditPostData> searchResults = redditClient.searchPosts(
                 request.subreddit(), request.query(), request.sort(),
-                request.timeRange(), request.maxPosts());
-        List<RedditPostData> posts = deduplicate(searchResults);
+                request.timeRange(), createdAtOrAfter, request.maxPosts());
+        List<RedditPostData> posts = deduplicate(searchResults).stream()
+                .filter(post -> isOnOrAfter(post, createdAtOrAfter))
+                .toList();
         LOG.infof("Reddit posts fetched datasetId=%d subreddit=%s postsFetched=%d",
                 datasetId, request.subreddit(), posts.size());
 
@@ -66,5 +72,10 @@ public class RedditImportService {
             unique.putIfAbsent(post.redditId(), post);
         }
         return List.copyOf(unique.values());
+    }
+
+    private static boolean isOnOrAfter(RedditPostData post, Instant createdAtOrAfter) {
+        return createdAtOrAfter == null
+                || post.createdAt() != null && !post.createdAt().isBefore(createdAtOrAfter);
     }
 }

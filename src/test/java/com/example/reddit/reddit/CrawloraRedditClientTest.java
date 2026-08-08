@@ -8,6 +8,7 @@ import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,7 +34,11 @@ class CrawloraRedditClientTest {
         when(config.maxRetries()).thenReturn(2);
         when(config.retryDelay()).thenReturn(0L);
         when(config.rateLimitRetryDelay()).thenReturn(0L);
-        client = new CrawloraRedditClient(api, new CrawloraResponseParser(), config);
+        client = new CrawloraRedditClient(
+                api,
+                new CrawloraResponseParser(),
+                config,
+                new CrawloraRequestPacer(config));
     }
 
     @Test
@@ -66,12 +71,97 @@ class CrawloraRedditClientTest {
         when(api.search("quarkus", "java", "relevance", "all", 2, "t3_first", "test-key"))
                 .thenReturn(secondResponse);
 
-        List<RedditPostData> posts = client.searchPosts("java", "quarkus", "relevance", "all", 3);
+        List<RedditPostData> posts = client.searchPosts(
+                "java", "quarkus", "relevance", "all", null, 3);
 
         assertEquals(List.of("first", "second", "third"),
                 posts.stream().map(RedditPostData::redditId).toList());
         verify(api).search("quarkus", "java", "relevance", "all", 3, null, "test-key");
         verify(api).search("quarkus", "java", "relevance", "all", 2, "t3_first", "test-key");
+    }
+
+    @Test
+    void continuesPaginationUntilItFindsAPostOnOrAfterTheCutoff() throws Exception {
+        JsonNode oldPage = objectMapper.readTree("""
+                {
+                  "code": 200,
+                  "data": {
+                    "posts": [
+                      {"id":"old","subreddit":"java","title":"Old","created":"2022-12-31T23:59:59Z"}
+                    ],
+                    "pagination": {"after":"t3_old"}
+                  }
+                }
+                """);
+        JsonNode recentPage = objectMapper.readTree("""
+                {
+                  "code": 200,
+                  "data": {
+                    "posts": [
+                      {"id":"recent","subreddit":"java","title":"Recent","created":"2023-01-01T00:00:00Z"}
+                    ],
+                    "pagination": {"after":null}
+                  }
+                }
+                """);
+        Response oldResponse = response(200, oldPage);
+        Response recentResponse = response(200, recentPage);
+        when(api.search("quarkus", "java", "relevance", "all", 1, null, "test-key"))
+                .thenReturn(oldResponse);
+        when(api.search("quarkus", "java", "relevance", "all", 1, "t3_old", "test-key"))
+                .thenReturn(recentResponse);
+
+        List<RedditPostData> posts = client.searchPosts(
+                "java",
+                "quarkus",
+                "relevance",
+                "all",
+                Instant.parse("2023-01-01T00:00:00Z"),
+                1);
+
+        assertEquals(1, posts.size());
+        assertEquals("recent", posts.getFirst().redditId());
+        verify(api).search("quarkus", "java", "relevance", "all", 1, "t3_old", "test-key");
+    }
+
+    @Test
+    void keepsCollectedPostsWhenCrawloraReportsNoEntriesForTheNextRssPage() throws Exception {
+        JsonNode firstPage = objectMapper.readTree("""
+                {
+                  "code": 200,
+                  "data": {
+                    "posts": [
+                      {"id":"post1","subreddit":"java","title":"Post",
+                       "created":"2024-01-01T00:00:00Z"}
+                    ],
+                    "pagination": {"after":"t3_post1"}
+                  }
+                }
+                """);
+        JsonNode exhaustedPage = objectMapper.readTree("""
+                {
+                  "code": 503,
+                  "msg": "Service Unavailable",
+                  "data": "reddit RSS parser found no entries without a no-results marker"
+                }
+                """);
+        Response firstResponse = response(200, firstPage);
+        Response exhaustedResponse = response(503, exhaustedPage);
+        when(api.search("quarkus", "java", "relevance", "all", 2, null, "test-key"))
+                .thenReturn(firstResponse);
+        when(api.search("quarkus", "java", "relevance", "all", 1, "t3_post1", "test-key"))
+                .thenReturn(exhaustedResponse);
+
+        List<RedditPostData> posts = client.searchPosts(
+                "java",
+                "quarkus",
+                "relevance",
+                "all",
+                Instant.parse("2023-01-01T00:00:00Z"),
+                2);
+
+        assertEquals(List.of("post1"), posts.stream().map(RedditPostData::redditId).toList());
+        verify(api).search("quarkus", "java", "relevance", "all", 1, "t3_post1", "test-key");
     }
 
     @Test
@@ -87,7 +177,8 @@ class CrawloraRedditClientTest {
                 .thenReturn(unavailable)
                 .thenReturn(successfulResponse);
 
-        List<RedditPostData> posts = client.searchPosts("java", "quarkus", "new", "week", 1);
+        List<RedditPostData> posts = client.searchPosts(
+                "java", "quarkus", "new", "week", null, 1);
 
         assertEquals(1, posts.size());
         assertEquals("post1", posts.getFirst().redditId());
@@ -126,7 +217,7 @@ class CrawloraRedditClientTest {
 
         RedditClientException exception = assertThrows(
                 RedditClientException.class,
-                () -> client.searchPosts("java", "quarkus", "new", "week", 1));
+                () -> client.searchPosts("java", "quarkus", "new", "week", null, 1));
 
         assertTrue(exception.getMessage().contains("HTTP 401"));
     }
@@ -142,7 +233,8 @@ class CrawloraRedditClientTest {
                 .thenReturn(rateLimited)
                 .thenReturn(successfulResponse);
 
-        List<RedditPostData> posts = client.searchPosts("java", "quarkus", "new", "week", 1);
+        List<RedditPostData> posts = client.searchPosts(
+                "java", "quarkus", "new", "week", null, 1);
 
         assertEquals(1, posts.size());
         verify(api, org.mockito.Mockito.times(2))
@@ -155,7 +247,7 @@ class CrawloraRedditClientTest {
 
         RedditClientException exception = assertThrows(
                 RedditClientException.class,
-                () -> client.searchPosts("java", "quarkus", "new", "week", 1));
+                () -> client.searchPosts("java", "quarkus", "new", "week", null, 1));
 
         assertTrue(exception.getMessage().contains("CRAWLORA_API_KEY"));
     }

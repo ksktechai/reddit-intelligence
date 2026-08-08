@@ -4,7 +4,10 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Size;
+
+import java.time.LocalDate;
 
 public record CreateDatasetRequest(
         @NotBlank
@@ -20,6 +23,9 @@ public record CreateDatasetRequest(
 
         @Pattern(regexp = "all|hour|day|week|month|year")
         String timeRange,
+
+        @PastOrPresent
+        LocalDate fromDate,
 
         @Min(1) @Max(1000)
         Integer maxPosts,

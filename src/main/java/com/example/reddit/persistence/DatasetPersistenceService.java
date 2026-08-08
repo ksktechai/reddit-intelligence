@@ -16,6 +16,7 @@ public class DatasetPersistenceService {
         dataset.query = request.query();
         dataset.sort = request.sort();
         dataset.timeRange = request.timeRange();
+        dataset.fromDate = request.fromDate();
         dataset.maxPosts = request.maxPosts();
         dataset.includeComments = request.includeComments();
         dataset.status = DatasetStatus.RUNNING;

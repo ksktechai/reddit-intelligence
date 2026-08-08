@@ -75,6 +75,7 @@ public class DatasetService {
                 dataset.query,
                 dataset.sort,
                 dataset.timeRange,
+                dataset.fromDate,
                 dataset.maxPosts,
                 dataset.includeComments,
                 dataset.postsImported,

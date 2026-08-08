@@ -12,6 +12,7 @@ import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -30,6 +31,9 @@ public class DatasetEntity extends PanacheEntity {
 
     @Column(name = "time_range", nullable = false, length = 20)
     public String timeRange;
+
+    @Column(name = "from_date")
+    public LocalDate fromDate;
 
     @Column(name = "max_posts", nullable = false)
     public int maxPosts;

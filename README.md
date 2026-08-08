@@ -44,6 +44,18 @@ The database is exposed at `localhost:5432` with:
 
 The Compose service includes a PostgreSQL health check and a named volume. Stop it with `docker compose down`. Add `-v` only when you intentionally want to delete all local database data.
 
+### Reset all local research data
+
+Stop the application, then remove and recreate the local PostgreSQL volume:
+
+```bash
+docker compose down -v
+docker compose up -d postgres
+docker compose ps
+```
+
+This permanently deletes every local dataset, post, comment, and Flyway schema record. Restart `./gradlew quarkusDev` afterward; Flyway recreates the schema and applies all migrations automatically. Do not use `-v` against an environment whose data you need to retain.
+
 ## Run the application
 
 Confirm that `java -version` reports Java 25, set a server-side Crawlora key, then run:
@@ -77,9 +89,13 @@ Crawlora settings in `application.properties` can be overridden with:
 | `CRAWLORA_MAX_RETRIES` | `3` |
 | `CRAWLORA_RETRY_DELAY` | `1000` ms base exponential delay |
 | `CRAWLORA_RATE_LIMIT_RETRY_DELAY` | `60000` ms when a 429 has no `Retry-After` |
+| `CRAWLORA_MIN_REQUEST_INTERVAL` | `13000` ms (slightly under 5 requests/minute) |
 | `CRAWLORA_COMMENTS_LIMIT` | `100` (valid range `1`–`100`) |
+| `CRAWLORA_HTTP_LOGGING` | `true` in dev; `false` in production and tests |
 
-HTTP 429 and 5xx responses, plus transport failures, are retried with bounded exponential backoff. A numeric `Retry-After` header takes precedence. Authentication and other non-retryable 4xx responses fail immediately.
+All Crawlora calls share one application-wide request pacer, including calls from concurrent dataset imports and retries. The default 13-second interval leaves a little headroom below the Free plan's 5 requests/minute limit. Set `CRAWLORA_MIN_REQUEST_INTERVAL` to a lower interval only when the active Crawlora plan supports a higher request rate. HTTP 429 and 5xx responses, plus transport failures, are still retried with bounded exponential backoff. A numeric `Retry-After` header takes precedence. Authentication and other non-retryable 4xx responses fail immediately.
+
+In development mode, every Crawlora attempt logs its exact encoded URL, HTTP method, request headers, response status, response headers, duration, and raw response body. Sensitive headers such as `x-api-key`, authorization, and cookies are always redacted, and occurrences of the configured API key are removed from URLs and payloads. Set `CRAWLORA_HTTP_LOGGING=false` to suppress these logs or explicitly enable them outside development with `CRAWLORA_HTTP_LOGGING=true`. Full payload logging can be verbose and may place collected Reddit content in log storage.
 
 ## Run from IntelliJ IDEA
 
@@ -99,6 +115,7 @@ curl --fail-with-body -X POST http://localhost:8080/api/datasets \
     "query": "Master of Artificial Intelligence",
     "sort": "relevance",
     "timeRange": "all",
+    "fromDate": "2023-01-01",
     "maxPosts": 100,
     "includeComments": true
   }'
@@ -113,6 +130,7 @@ A successful response resembles:
   "query": "Master of Artificial Intelligence",
   "sort": "relevance",
   "timeRange": "all",
+  "fromDate": "2023-01-01",
   "maxPosts": 100,
   "includeComments": true,
   "postsImported": 12,
@@ -123,6 +141,10 @@ A successful response resembles:
   "errorMessage": null
 }
 ```
+
+`fromDate` is optional and inclusive. `"fromDate": "2023-01-01"` guarantees that the service only persists posts whose Reddit creation timestamp is on or after 1 January 2023 UTC. Posts without a usable creation timestamp are excluded when this filter is present.
+
+Crawlora supports only relative `time` values rather than an exact start date, so the service follows Crawlora search cursors and applies `fromDate` locally before persistence. Use `"timeRange": "all"` with `fromDate` to avoid unintentionally restricting the provider search to a shorter relative window. Filtering can require additional search pages and credits. The cutoff guarantees the dates of stored results, but it cannot guarantee that Reddit/Crawlora search exposes every matching historical post.
 
 ## Inspect collected data
 
@@ -155,7 +177,7 @@ Run the complete verification and package the service with:
 
 ## Database model and deduplication
 
-- `dataset`: the complete import request and its lifecycle/statistics.
+- `dataset`: the complete import request, including the optional inclusive `from_date`, and its lifecycle/statistics.
 - `reddit_post`: raw post metadata. `reddit_id` has a database unique constraint.
 - `reddit_comment`: raw comment metadata and a self-referencing `parent_comment_id`. `reddit_id` has a database unique constraint.
 - `dataset_post`: many-to-many link between a research dataset and deduplicated posts, with a composite primary key.
@@ -166,11 +188,11 @@ Re-importing the same search creates a new dataset, refreshes the matching raw p
 
 ## Crawlora collection characteristics
 
-The service calls `GET /api/v1/reddit/search` and `GET /api/v1/reddit/comments/{id}`. Search results are cursor-paginated in pages of at most 100 until `maxPosts` is reached, results end, a cursor repeats, or a page adds no new posts. Each successful search page and comment request consumes Crawlora credits according to the active plan.
+The service calls `GET /api/v1/reddit/search` and `GET /api/v1/reddit/comments/{id}`. Search results are cursor-paginated in pages of at most 100 until `maxPosts` is reached, results end, a cursor repeats, or a page adds no new posts. Crawlora can return HTTP 503 with `reddit RSS parser found no entries` when a supplied continuation cursor has exhausted the RSS results; the service treats this specific response as the end of pagination and retains posts collected from earlier pages. Other HTTP 503 responses remain retryable failures. Each successful search page and comment request consumes Crawlora credits according to the active plan.
 
 Crawlora's default public comment response is flat and currently clamps `limit` to 100. The parser uses `parent_id` when present to rebuild nested records; a comment whose parent was not returned is retained as a root so collected data is not discarded. Missing scores and reported comment counts are stored as zero. Deleted/removed bodies are retained as returned.
 
-The client does not log the API key or full response bodies. A comment failure leaves `comments_downloaded=false` for a new post and allows other posts in the dataset to be retained. A search-level failure marks the dataset `FAILED` with an error message.
+The client never logs the API key. Development-mode HTTP logging includes full response bodies so upstream failures can be diagnosed. A comment failure leaves `comments_downloaded=false` for a new post and allows other posts in the dataset to be retained. A search-level failure marks the dataset `FAILED` with an error message.
 
 ## Future roadmap
 

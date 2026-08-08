@@ -1,0 +1,234 @@
+{
+  "info": {
+    "_postman_id": "329376d8-c977-4e90-aac1-49147f380d6e",
+    "name": "Crawlora Reddit Datasets (2023+)",
+    "description": "Creates one Reddit dataset per subreddit. Related search phrases are combined with Reddit OR syntax. All datasets include only posts created on or after 2023-01-01 UTC.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "r/NewToNewZealand - migration and graduate jobs",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subreddit\": \"NewToNewZealand\",\n  \"query\": \"\\\"graduate job\\\" OR \\\"skilled migrant\\\" OR \\\"accredited employer\\\" OR \\\"international student job market\\\"\",\n  \"sort\": \"relevance\",\n  \"timeRange\": \"all\",\n  \"fromDate\": \"2023-01-01\",\n  \"maxPosts\": 50,\n  \"includeComments\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/datasets",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "datasets"
+          ]
+        }
+      }
+    },
+    {
+      "name": "r/PersonalFinanceNZ - graduate salaries",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subreddit\": \"PersonalFinanceNZ\",\n  \"query\": \"\\\"graduate salary\\\" OR \\\"business analyst salary\\\"\",\n  \"sort\": \"relevance\",\n  \"timeRange\": \"all\",\n  \"fromDate\": \"2023-01-01\",\n  \"maxPosts\": 50,\n  \"includeComments\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/datasets",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "datasets"
+          ]
+        }
+      }
+    },
+    {
+      "name": "r/newzealand - job market and international students",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subreddit\": \"newzealand\",\n  \"query\": \"\\\"job market\\\" OR \\\"international students\\\"\",\n  \"sort\": \"relevance\",\n  \"timeRange\": \"all\",\n  \"fromDate\": \"2023-01-01\",\n  \"maxPosts\": 50,\n  \"includeComments\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/datasets",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "datasets"
+          ]
+        }
+      }
+    },
+    {
+      "name": "r/auckland - job market and international students",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subreddit\": \"auckland\",\n  \"query\": \"\\\"job market\\\" OR \\\"international students\\\"\",\n  \"sort\": \"relevance\",\n  \"timeRange\": \"all\",\n  \"fromDate\": \"2023-01-01\",\n  \"maxPosts\": 50,\n  \"includeComments\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/datasets",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "datasets"
+          ]
+        }
+      }
+    },
+    {
+      "name": "r/AusVisa - skilled migration pathways",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subreddit\": \"AusVisa\",\n  \"query\": \"\\\"189 points\\\" OR 491 OR \\\"state nomination\\\" OR ACS OR 485\",\n  \"sort\": \"relevance\",\n  \"timeRange\": \"all\",\n  \"fromDate\": \"2023-01-01\",\n  \"maxPosts\": 50,\n  \"includeComments\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/datasets",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "datasets"
+          ]
+        }
+      }
+    },
+    {
+      "name": "r/adelaide - graduate and IT jobs",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subreddit\": \"adelaide\",\n  \"query\": \"\\\"graduate jobs\\\" OR \\\"IT jobs\\\"\",\n  \"sort\": \"relevance\",\n  \"timeRange\": \"all\",\n  \"fromDate\": \"2023-01-01\",\n  \"maxPosts\": 50,\n  \"includeComments\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/datasets",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "datasets"
+          ]
+        }
+      }
+    },
+    {
+      "name": "r/australian - graduate and IT jobs",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subreddit\": \"australian\",\n  \"query\": \"\\\"graduate jobs\\\" OR \\\"IT jobs\\\"\",\n  \"sort\": \"relevance\",\n  \"timeRange\": \"all\",\n  \"fromDate\": \"2023-01-01\",\n  \"maxPosts\": 50,\n  \"includeComments\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/datasets",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "datasets"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ]
+}

@@ -6,10 +6,12 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
 @Path("/api/v1/reddit")
 @RegisterRestClient(configKey = "crawlora-api")
+@RegisterProvider(CrawloraHttpLoggingFilter.class)
 public interface CrawloraApi {
 
     @GET

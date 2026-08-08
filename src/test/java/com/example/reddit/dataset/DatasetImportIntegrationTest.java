@@ -24,6 +24,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.when;
 
 @QuarkusTest
@@ -51,7 +52,7 @@ class DatasetImportIntegrationTest {
                 "phase1root", "current_student", "It has strong applied content.",
                 6, 0, Instant.parse("2026-02-01T01:00:00Z"), false, List.of(reply));
 
-        when(redditClient.searchPosts(any(), any(), any(), any(), anyInt()))
+        when(redditClient.searchPosts(any(), any(), any(), any(), nullable(Instant.class), anyInt()))
                 .thenReturn(List.of(post));
         when(redditClient.fetchComments("phase1post"))
                 .thenReturn(new RedditCommentThread(List.of(root), true, 0));
@@ -106,6 +107,7 @@ class DatasetImportIntegrationTest {
                           "query": "Master of Artificial Intelligence",
                           "sort": "relevance",
                           "timeRange": "all",
+                          "fromDate": "2023-01-01",
                           "maxPosts": 100,
                           "includeComments": true
                         }
@@ -113,6 +115,7 @@ class DatasetImportIntegrationTest {
                 .when().post("/api/datasets")
                 .then().statusCode(201)
                 .body("subreddit", equalTo("universityofauckland"))
+                .body("fromDate", equalTo("2023-01-01"))
                 .body("postsImported", equalTo(1))
                 .body("commentsImported", equalTo(2))
                 .body("status", equalTo("COMPLETED"))

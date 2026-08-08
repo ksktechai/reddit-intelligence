@@ -15,4 +15,8 @@ public interface CrawloraConfig {
     long retryDelay();
 
     long rateLimitRetryDelay();
+
+    long minRequestInterval();
+
+    boolean httpLogging();
 }
