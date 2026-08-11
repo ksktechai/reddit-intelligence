@@ -89,11 +89,19 @@ class DatasetImportIntegrationTest {
                 .body("status", equalTo("COMPLETED"));
 
         // The second dataset links to the existing raw records instead of duplicating them.
-        assertEquals(2, DatasetEntity.count());
-        assertEquals(1, RedditPostEntity.count());
-        assertEquals(2, RedditCommentEntity.count());
+        assertEquals(2, DatasetEntity.count("query", "Master of Artificial Intelligence"));
+        assertEquals(1, RedditPostEntity.count("redditId", "phase1post"));
+        assertEquals(2, RedditCommentEntity.count(
+                "redditId = ?1 or redditId = ?2", "phase1root", "phase1reply"));
         Number datasetPostCount = (Number) entityManager
-                .createNativeQuery("select count(*) from dataset_post")
+                .createNativeQuery("""
+                        select count(*)
+                        from dataset_post dp
+                        join dataset d on d.id = dp.dataset_id
+                        join reddit_post p on p.id = dp.post_id
+                        where d.query = 'Master of Artificial Intelligence'
+                          and p.reddit_id = 'phase1post'
+                        """)
                 .getSingleResult();
         assertEquals(2L, datasetPostCount.longValue());
     }

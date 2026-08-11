@@ -1,8 +1,8 @@
 # reddit-intelligence
 
-`reddit-intelligence` is a Java 25 / Quarkus backend that creates research datasets from Reddit data returned by [Crawlora's Reddit APIs](https://crawlora.net/docs/reddit). A dataset records one subreddit search request, stores matching posts, rebuilds and stores the returned comment hierarchy, and exposes the collected raw data through REST APIs.
+`reddit-intelligence` is a Java 25 / Quarkus backend that creates research datasets from Reddit data returned by [Crawlora's Reddit APIs](https://crawlora.net/docs/reddit). It stores the raw post/comment hierarchy and can run local-LLM analysis that extracts topics, claims, sentiment, evidence, and decision reports.
 
-This repository is Phase 1. It intentionally contains no LLMs, embeddings, vector storage, RAG, sentiment processing, authentication, or UI.
+This repository includes Phase 1 collection and Phase 2 analysis. Embeddings, vector storage, RAG, authentication, and UI remain out of scope.
 
 ## Architecture
 
@@ -11,12 +11,13 @@ The API performs imports synchronously: `POST /api/datasets` returns after the C
 - `api`: validated request records, response records, and REST resources.
 - `dataset`: dataset orchestration and import statistics.
 - `reddit`: replaceable `RedditClient`, Crawlora REST client, retry/cursor pagination logic, normalized transport records, flat-comment hierarchy reconstruction, and importer.
+- `analysis`: asynchronous run orchestration, source chunking, provider-neutral `AnalysisModel`, Ollama structured-output integration, provenance validation, and result synthesis.
 - `persistence`: Panache entities and transaction-scoped persistence operations.
 - `post` and `comment`: read services that map entities to API records.
 - `config`: typed Crawlora configuration.
 - Flyway owns the production schema; Hibernate only validates it.
 
-`RedditClient` keeps the collection provider separate from dataset orchestration. Crawlora JSON objects are parsed into transport records and never used as persistence entities. Persistence entities are never returned directly from the REST API.
+`RedditClient` keeps the collection provider separate from dataset orchestration, while `AnalysisModel` keeps model infrastructure separate from analytical processing. Crawlora and Ollama transport objects are never persistence entities. Persistence entities are never returned directly from the REST API.
 
 ## Requirements
 
@@ -24,6 +25,7 @@ The API performs imports synchronously: `POST /api/datasets` returns after the C
 - Docker Desktop, Docker Engine, or a compatible container runtime
 - Docker Compose v2
 - A Crawlora API key
+- An Ollama server reachable from this application, with `gpt-oss:20b` installed
 
 The Gradle wrapper is included; a system Gradle installation is not required. The project uses Quarkus 3.38.1, PostgreSQL 16, Hibernate ORM with Panache, Flyway, Quarkus REST, Quarkus REST Client/Jackson, Bean Validation, JUnit, Mockito, and Quarkus PostgreSQL Dev Services backed by Testcontainers.
 
@@ -62,6 +64,8 @@ Confirm that `java -version` reports Java 25, set a server-side Crawlora key, th
 
 ```bash
 export CRAWLORA_API_KEY="replace-with-your-rotated-key"
+export LLM_BASE_URL="http://192.168.1.4:11434/v1"
+export LLM_MODEL="gpt-oss:20b"
 ./gradlew quarkusDev
 ```
 
@@ -96,6 +100,25 @@ Crawlora settings in `application.properties` can be overridden with:
 All Crawlora calls share one application-wide request pacer, including calls from concurrent dataset imports and retries. The default 13-second interval leaves a little headroom below the Free plan's 5 requests/minute limit. Set `CRAWLORA_MIN_REQUEST_INTERVAL` to a lower interval only when the active Crawlora plan supports a higher request rate. HTTP 429 and 5xx responses, plus transport failures, are still retried with bounded exponential backoff. A numeric `Retry-After` header takes precedence. Authentication and other non-retryable 4xx responses fail immediately.
 
 In development mode, every Crawlora attempt logs its exact encoded URL, HTTP method, request headers, response status, response headers, duration, and raw response body. Sensitive headers such as `x-api-key`, authorization, and cookies are always redacted, and occurrences of the configured API key are removed from URLs and payloads. Set `CRAWLORA_HTTP_LOGGING=false` to suppress these logs or explicitly enable them outside development with `CRAWLORA_HTTP_LOGGING=true`. Full payload logging can be verbose and may place collected Reddit content in log storage.
+
+Phase 2 model settings can be overridden with:
+
+| Environment variable | Default |
+| --- | --- |
+| `LLM_BASE_URL` | `http://192.168.1.4:11434/v1` |
+| `LLM_MODEL` | `gpt-oss:20b` |
+| `LLM_API_KEY` | `ollama` (required by OpenAI clients but ignored locally) |
+| `LLM_CONNECT_TIMEOUT` | `5000` ms |
+| `LLM_READ_TIMEOUT` | `300000` ms |
+| `LLM_MAX_RETRIES` | `2` |
+| `LLM_RETRY_DELAY` | `2000` ms base exponential delay |
+| `LLM_MAX_INPUT_CHARS` | `60000` per source chunk |
+| `LLM_MAX_OUTPUT_TOKENS` | `12000` |
+| `LLM_TEMPERATURE` | `0.1` |
+| `LLM_LOG_PAYLOADS` | `false` |
+| `LLM_MAX_CONCURRENT_ANALYSES` | `1` |
+
+The Ollama adapter calls the OpenAI-compatible `/v1/chat/completions` endpoint and supplies a strict JSON Schema through `response_format`. Per-chunk extraction uses low reasoning effort; dataset synthesis uses medium. Model payload logging is disabled because prompts contain collected Reddit text. Analysis concurrency defaults to one so multiple datasets cannot overload the remote M2 Max; additional runs remain `PENDING` in an in-process queue. See [Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility) and [structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
 
 ## Run from IntelliJ IDEA
 
@@ -159,15 +182,36 @@ curl http://localhost:8080/api/comments/1
 
 `postId` and `commentId` in API paths are local database IDs; every response also includes the original Reddit ID. Post comments are returned as a flat list with `parentCommentId` and `depth`, which preserves and exposes the hierarchy without duplicating nested JSON.
 
+## Analyse a completed dataset
+
+Analysis is asynchronous. Start a run for a completed, non-empty dataset:
+
+```bash
+curl --fail-with-body -X POST http://localhost:8080/api/datasets/1/analyses \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-oss:20b"}'
+```
+
+The API returns `202 Accepted`, a `Location` header, and a run whose initial status is normally `PENDING` or `RUNNING`. Poll the returned analysis ID:
+
+```bash
+curl http://localhost:8080/api/analyses/1
+curl http://localhost:8080/api/datasets/1/analyses
+```
+
+A completed response contains a decision report and topics with nested claims and evidence. Each evidence item identifies a local `POST` or `COMMENT` source, the original Reddit ID, permalink, stance, verbatim excerpt, and rationale. Claims with unknown source IDs or excerpts that do not occur in stored Reddit text are discarded. The report always states that Reddit participants are self-selected, claims are unverified, and provider/comment coverage may be incomplete.
+
+Only one `PENDING` or `RUNNING` analysis is allowed per dataset. Completed and failed runs are immutable history, so a later run can use a different model or prompt version without overwriting earlier results. Runs interrupted by an application restart are marked `FAILED` during startup and can be submitted again.
+
 ## Run tests
 
-Docker must be running. Normal tests mock the provider boundary and never call live Crawlora or spend credits:
+Docker must be running. Normal tests mock both provider boundaries and never call live Crawlora or Ollama:
 
 ```bash
 ./gradlew test
 ```
 
-Quarkus Dev Services starts a disposable PostgreSQL 16 Testcontainer, Flyway migrates it, and the integration test exercises dataset creation, post persistence, nested comment persistence, hierarchy, and a repeated import without raw-data duplicates. Crawlora client and parser tests use fixtures in `src/test/resources/reddit/` and cover normalized fields, missing fields, flat parent links, deleted comments, cursor pagination, incomplete comment pages, retryable failures, and non-retryable authentication errors.
+Quarkus Dev Services starts a disposable PostgreSQL 16 Testcontainer and applies every Flyway migration. Integration tests exercise dataset creation, deduplication, comment hierarchy, asynchronous analysis lifecycle, evidence persistence, and nested report responses. Unit tests cover Crawlora parsing/retries, chunk boundaries, Ollama schema envelopes, malformed model-output retries, and rejection of hallucinated evidence.
 
 Run the complete verification and package the service with:
 
@@ -181,6 +225,9 @@ Run the complete verification and package the service with:
 - `reddit_post`: raw post metadata. `reddit_id` has a database unique constraint.
 - `reddit_comment`: raw comment metadata and a self-referencing `parent_comment_id`. `reddit_id` has a database unique constraint.
 - `dataset_post`: many-to-many link between a research dataset and deduplicated posts, with a composite primary key.
+- `analysis_run`: immutable/versioned analysis lifecycle, model, prompt version, source counts, and result counts.
+- `analysis_topic`, `analysis_claim`, and `analysis_evidence`: structured analytical output with evidence foreign keys to exactly one post or comment.
+- `analysis_report`: one decision report per analysis run.
 
 Re-importing the same search creates a new dataset, refreshes the matching raw post/comment metadata, and links the new dataset to existing posts. Unique constraints provide the final database-level duplicate guarantee.
 
@@ -194,17 +241,17 @@ Crawlora's default public comment response is flat and currently clamps `limit` 
 
 The client never logs the API key. Development-mode HTTP logging includes full response bodies so upstream failures can be diagnosed. A comment failure leaves `comments_downloaded=false` for a new post and allows other posts in the dataset to be retained. A search-level failure marks the dataset `FAILED` with an error message.
 
-## Future roadmap
-
-Phase 2:
+## Phase 2 capabilities
 
 - topic extraction
 - claim extraction
 - evidence aggregation
 - sentiment
 - LLM-generated decision reports
+- ranked, bounded synthesis (up to 12 topics, 20 claims, and 2 citations per claim)
+- completion-token diagnostics and compact retries when Ollama truncates structured JSON
 
-Phase 3:
+## Future roadmap: Phase 3
 
 - embeddings
 - pgvector

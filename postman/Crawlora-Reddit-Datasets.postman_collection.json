@@ -222,12 +222,110 @@
           ]
         }
       }
+    },
+    {
+      "name": "Phase 2 Analysis",
+      "item": [
+        {
+          "name": "Start dataset analysis",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "  pm.collectionVariables.set('analysisId', pm.response.json().analysisId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"gpt-oss:20b\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/datasets/{{datasetId}}/analyses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "datasets",
+                "{{datasetId}}",
+                "analyses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get analysis result",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/analyses/{{analysisId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "analyses",
+                "{{analysisId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List dataset analyses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/datasets/{{datasetId}}/analyses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "datasets",
+                "{{datasetId}}",
+                "analyses"
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "datasetId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "analysisId",
+      "value": "1",
       "type": "string"
     }
   ]
